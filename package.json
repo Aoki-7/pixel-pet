@@ -1,0 +1,19 @@
+{
+  "name": "pixel-pet",
+  "version": "0.1.0",
+  "description": "智能桌面宠物：从种子像素涌现形态、以代码行数为食的 NCA 像素生命体",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/validate.js && node test/interact.js"
+  },
+  "author": "Aoki-7",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Aoki-7/pixel-pet.git"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}

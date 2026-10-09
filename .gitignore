@@ -1,0 +1,4 @@
+node_modules/
+food/
+test/snapshots/
+*.log
