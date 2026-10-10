@@ -60,6 +60,7 @@
       this.N = this.H * this.W;
       this.updateProb = options.updateProb != null ? options.updateProb : 0.7;
       this.territoryR2 = Math.pow(this.size * TERRITORY_RATIO, 2);
+      this.trained = false;  // 训练权重模式标志
 
       this.state = new Float32Array(this.N * this.C);
       this.next = new Float32Array(this.N * this.C);
@@ -90,24 +91,52 @@
       for (let i = 0; i < this.b2.length; i++) this.b2[i] = 0;
     }
 
+    /**
+     * 加载训练好的权重（从 PyTorch 导出的 JSON）。
+     * PyTorch nn.Linear.weight 的布局 (out, in) 与 JS 引擎的行优先一致。
+     * 加载后切换为 trained 模式：单点种子、跳过领地约束、直接输出 RGBA。
+     */
+    loadWeights(weights) {
+      for (let j = 0; j < this.HID; j++) {
+        for (let i = 0; i < this.P; i++)
+          this.w1[j * this.P + i] = weights.w1[j][i];
+        this.b1[j] = weights.b1[j];
+      }
+      for (let k = 0; k < this.C; k++) {
+        for (let j = 0; j < this.HID; j++)
+          this.w2[k * this.HID + j] = weights.w2[k][j];
+        this.b2[k] = weights.b2[k];
+      }
+      this.trained = true;
+      this.reset();
+    }
+
     // ---- 种子：中心只有“几个”像素非零（十字形 5 格） ----
     reset() {
       this.state.fill(0);
       this.alive.fill(0);
       this.stepCount = 0;
       const c = (this.size - 1) >> 1;
-      const seeds = [[c, c], [c - 1, c], [c + 1, c], [c, c - 1], [c, c + 1]];
-      for (const [y, x] of seeds) {
-        if (y < 0 || y >= this.H || x < 0 || x >= this.W) continue;
-        const idx = y * this.W + x;
+      if (this.trained) {
+        // 训练权重模式：单点种子（与 PyTorch 训练一致）
+        const idx = c * this.W + c;
         const off = idx * this.C;
-        this.state[off + 3] = 1.0; // alpha
-        for (let ch = 0; ch < this.C; ch++) {
-          if (ch === 3) continue;
-          // 轻微随机，打破对称
-          this.state[off + ch] = (this.rng() - 0.5) * 0.2;
-        }
+        this.state[off + 3] = 1.0;
         this.alive[idx] = 1;
+      } else {
+        // 随机权重模式：十字形 5 格
+        const seeds = [[c, c], [c - 1, c], [c + 1, c], [c, c - 1], [c, c + 1]];
+        for (const [y, x] of seeds) {
+          if (y < 0 || y >= this.H || x < 0 || x >= this.W) continue;
+          const idx = y * this.W + x;
+          const off = idx * this.C;
+          this.state[off + 3] = 1.0;
+          for (let ch = 0; ch < this.C; ch++) {
+            if (ch === 3) continue;
+            this.state[off + ch] = (this.rng() - 0.5) * 0.2;
+          }
+          this.alive[idx] = 1;
+        }
       }
     }
 
@@ -167,8 +196,8 @@
     step() {
       this.computeAlive(this.state, this.alive);
       // 生长稳态：领地之外的前沿格在苏醒前就被剔除掩码（限制扩张）。
-      // 必须在更新循环前执行——一旦零态格在本步诞生就拦截不及了。
-      this.enforceTerritory(this.state, this.alive);
+      // 训练权重模式跳过——形状由训练决定，不需要领地约束。
+      if (!this.trained) this.enforceTerritory(this.state, this.alive);
       this.next.set(this.state); // 非更新格保持不变
 
       const p = this.percept;
@@ -305,6 +334,14 @@
         }
         const a = this.state[s + 3];
         const aa = a <= 0.1 ? 0 : a >= 0.6 ? 1 : (a - 0.1) / 0.5;
+        if (this.trained) {
+          // 训练权重模式：直接输出 RGBA 通道（颜色由训练决定）
+          out[o]     = Math.round(Math.max(0, Math.min(1, this.state[s]))     * 255);
+          out[o + 1] = Math.round(Math.max(0, Math.min(1, this.state[s + 1])) * 255);
+          out[o + 2] = Math.round(Math.max(0, Math.min(1, this.state[s + 2])) * 255);
+          out[o + 3] = Math.round(aa * 255);
+          continue;
+        }
         // 色相粗调（低频，决定大色块）
         const hue1 = (
           this.state[s + 4] * 1.0 +

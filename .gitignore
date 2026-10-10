@@ -1,4 +1,7 @@
 node_modules/
 food/
+train/previews/
+train/screenshot.py
+train/screenshot.png
 test/snapshots/
 *.log

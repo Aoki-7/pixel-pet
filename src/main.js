@@ -60,7 +60,7 @@ function createWindow() {
 }
 
 function broadcastState() {
-  if (!win) return;
+  if (!win || win.isDestroyed()) return;
   win.webContents.send('pet-state', {
     sps: paused ? 0 : feeder.sps,
     energy: Math.round(feeder.energy),
@@ -118,8 +118,12 @@ function buildContextMenu() {
       click: () => { paused = !paused; broadcastState(); }
     },
     {
-      label: '重新孵化（随机新生命）',
+      label: '随机生长（随机新生命）',
       click: () => win.webContents.send('pet-command', 'rehatch')
+    },
+    {
+      label: '图片生长（训练形态）',
+      click: () => win.webContents.send('pet-command', 'trained-hatch')
     },
     {
       label: '显示/隐藏状态信息',
@@ -175,4 +179,8 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  win = null;  // 防止定时器在退出时访问已销毁的窗口
 });

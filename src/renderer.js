@@ -32,9 +32,9 @@
   let state = null;
   let hudVisible = false;
 
-  function hatch() {
+  // 随机生长：随机权重 + hatch 筛选 + 领地约束
+  function randomHatch() {
     loading.style.display = 'flex';
-    // 让"正在孵化"先上屏，再执行可能耗时的筛选
     requestAnimationFrame(() => requestAnimationFrame(() => {
       ca = NeuralCA.hatch({
         size: GRID,
@@ -42,9 +42,31 @@
         hidden: 128,
         baseSeed: (Math.random() * 1e9) | 0
       });
+      document.title = 'PixelPet [random]';
       loading.style.display = 'none';
       render();
       updateHud();
+    }));
+  }
+
+  // 图片生长：加载训练好的权重，从种子自动长成目标形状
+  function trainedHatch() {
+    loading.style.display = 'flex';
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      fetch('weights.json')
+        .then(r => { if (!r.ok) throw new Error('no weights'); return r.json(); })
+        .then(weights => {
+          ca = new NeuralCA({ size: GRID, channels: 16, hidden: 128, seed: 42 });
+          ca.loadWeights(weights);
+          document.title = 'PixelPet [trained]';
+          loading.style.display = 'none';
+          render();
+          updateHud();
+        })
+        .catch(() => {
+          // 没有训练权重，回退到随机
+          randomHatch();
+        });
     }));
   }
 
@@ -90,9 +112,10 @@
     const dt = Math.min(0.1, (t - last) / 1000);
     last = t;
 
-    if (ca && sps > 0) {
-      acc += sps * dt;
-      if (acc > 6) acc = 6; // 卡顿后不疯狂追赶
+    // 训练模式：自动从种子长到目标形状（80 步），长成后冻结
+    if (ca && ca.trained && ca.stepCount < 80) {
+      acc += 30 * dt;
+      if (acc > 6) acc = 6;
       let stepped = 0;
       while (acc >= 1 && stepped < 6) {
         ca.step();
@@ -100,7 +123,18 @@
         stepped++;
       }
       if (stepped > 0) render();
-    } else if (ca && sps === 0) {
+    } else if (ca && !ca.trained && sps > 0) {
+      // 随机权重模式：数据驱动步进
+      acc += sps * dt;
+      if (acc > 6) acc = 6;
+      let stepped = 0;
+      while (acc >= 1 && stepped < 6) {
+        ca.step();
+        acc -= 1;
+        stepped++;
+      }
+      if (stepped > 0) render();
+    } else if (ca) {
       // 闲置呼吸：轻微透明度脉动，暗示"活着但冻结"
       render(PixelInteract.breathAlpha(t));
     }
@@ -120,7 +154,8 @@
   });
 
   window.petAPI.onPetCommand(cmd => {
-    if (cmd === 'rehatch') hatch();
+    if (cmd === 'rehatch') randomHatch();
+    else if (cmd === 'trained-hatch') trainedHatch();
     else if (cmd === 'toggle-hud') {
       hudVisible = !hudVisible;
       hud.style.display = hudVisible ? 'block' : 'none';
@@ -163,6 +198,7 @@
       const cy = Math.floor((e.clientY - rect.top) / CELL);
       if (ca && cx >= 0 && cx < GRID && cy >= 0 && cy < GRID) {
         ca.damage(cx, cy, DAMAGE_RADIUS);
+        if (ca.trained) ca.stepCount = 60;  // 触发自动修复（再长 20 步）
         render();
       }
     }
@@ -174,6 +210,6 @@
     md = null;
   });
 
-  hatch();
+  trainedHatch();
   requestAnimationFrame(frame);
 })();

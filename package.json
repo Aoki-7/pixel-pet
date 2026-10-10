@@ -7,12 +7,8 @@
     "start": "electron .",
     "test": "node test/validate.js && node test/interact.js"
   },
-  "author": "Aoki-7",
+  "author": "",
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Aoki-7/pixel-pet.git"
-  },
   "devDependencies": {
     "electron": "^33.0.0"
   }
